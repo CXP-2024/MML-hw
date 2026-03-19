@@ -143,23 +143,43 @@ The complete implementation is in \texttt{mini\_jpeg.py}.  Below we present the 
 
 \subsection{Patch-wise DCT (3.1)}
 
-Figure~\ref{fig:dct1} and Figure~\ref{fig:dct2} show several example $8\times 8$ patches before and after 2D DCT for the two test images.
+We select four representative $8\times 8$ patches from each image at different variance levels (high-variance = textured, low-variance = smooth).  Figures~\ref{fig:loc1}--\ref{fig:loc2} show where the patches are located on the original image.  Figures~\ref{fig:dct1}--\ref{fig:dct2} show each patch zoomed in (top row) alongside its DCT log-magnitude (bottom row).
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.95\textwidth]{figures/p3_1_dct_patches.png}
-  \caption{Example patches from \texttt{p3\_1.png}: spatial domain (top) and DCT magnitude (bottom).}
+  \includegraphics[width=0.85\textwidth]{figures/p3_1_patch_locations.png}
+  \caption{\texttt{p3\_1.png}: Original image with selected patch locations highlighted by colored boxes.}
+  \label{fig:loc1}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.85\textwidth]{figures/p3_1_dct_patches.png}
+  \caption{\texttt{p3\_1.png}: Zoomed $8\times 8$ patches (top: spatial domain, bottom: DCT $\log(1+|c|)$). Colors match Figure~\ref{fig:loc1}.}
   \label{fig:dct1}
 \end{figure}
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.95\textwidth]{figures/p3_2_dct_patches.png}
-  \caption{Example patches from \texttt{p3\_2.png}: spatial domain (top) and DCT magnitude (bottom).}
+  \includegraphics[width=0.85\textwidth]{figures/p3_2_patch_locations.png}
+  \caption{\texttt{p3\_2.png}: Original image with selected patch locations highlighted by colored boxes.}
+  \label{fig:loc2}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.85\textwidth]{figures/p3_2_dct_patches.png}
+  \caption{\texttt{p3\_2.png}: Zoomed $8\times 8$ patches (top: spatial domain, bottom: DCT $\log(1+|c|)$). Colors match Figure~\ref{fig:loc2}.}
   \label{fig:dct2}
 \end{figure}
 
-\textbf{Observation:} In the DCT domain, most of the energy is concentrated in the \emph{upper-left corner} (low-frequency coefficients), especially the DC component at position $(0,0)$.  High-frequency coefficients (lower-right) tend to be near zero for smooth regions.  For \texttt{p3\_1.png} (a simpler graphic image), the energy concentration is particularly strong; \texttt{p3\_2.png} (a natural photograph with rich texture) retains more energy in mid- and high-frequency coefficients.
+\textbf{Observation:}
+\begin{itemize}[nosep]
+  \item \textbf{High-variance patches} (textured regions with edges/gradients) have DCT energy spread across many frequencies --- the heat map is broadly lit.
+  \item \textbf{Low-variance patches} (smooth/uniform regions) have nearly all energy concentrated in the DC component (top-left corner) --- the rest of the heat map is dark.
+  \item For \texttt{p3\_1.png} (a stylized map graphic), the majority of patches are uniform, so energy compaction is extreme.  For \texttt{p3\_2.png} (a natural photograph with rich texture), more patches retain mid/high-frequency energy.
+\end{itemize}
+This demonstrates why DCT-based compression works: smooth regions (common in most images) produce sparse coefficient blocks that are highly compressible after quantization.
 
 %--------------------------------------------------
 \subsection{Quantization Design (3.2)}

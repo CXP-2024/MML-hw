@@ -195,18 +195,79 @@ def run_pipeline(img_path, img_name):
     coeffs = blockwise_dct(padded)
 
     # Visualize several example patches before and after DCT
-    fig, axes = plt.subplots(2, 4, figsize=(14, 7))
-    patch_indices = [(0, 0), (0, 8), (8, 0), (8, 8)]
-    for idx, (pi, pj) in enumerate(patch_indices):
+    # Pick patches from diverse regions with different variance levels
+    h_pad, w_pad = padded.shape
+    # Only consider blocks within the original image (not padding)
+    variances = []
+    for i in range(0, orig_h - 7, 8):
+        for j in range(0, orig_w - 7, 8):
+            blk = padded[i:i+8, j:j+8]
+            variances.append((np.var(blk), i, j))
+    variances.sort(key=lambda x: x[0], reverse=True)
+
+    # Pick 4 patches at different variance levels, ensuring spatial diversity
+    def min_dist(pick_list, candidate):
+        if not pick_list:
+            return float('inf')
+        return min(abs(candidate[1] - p[1]) + abs(candidate[2] - p[2]) for p in pick_list)
+
+    n_blocks = len(variances)
+    # Divide into 4 quartiles by variance and pick one from each, maximizing distance
+    picks = []
+    quartile_size = max(n_blocks // 4, 1)
+    for q in range(4):
+        start = q * quartile_size
+        end = min(start + quartile_size, n_blocks)
+        candidates = variances[start:end]
+        # Filter out near-zero variance (padding artifacts)
+        candidates = [c for c in candidates if c[0] > 0.5] or candidates[:5]
+        # Pick the one farthest from already picked patches
+        best = max(candidates, key=lambda c: min_dist(picks, c))
+        picks.append(best)
+
+    # --- Figure 1: Original image with patch locations marked ---
+    colors = ['red', 'orange', 'cyan', 'lime']
+    labels = ['High var (Q1)', 'Mid-high var (Q2)', 'Mid-low var (Q3)', 'Low var (Q4)']
+    import matplotlib.patches as mpatches
+
+    fig_loc, ax_loc = plt.subplots(1, 1, figsize=(12, 8))
+    ax_loc.imshow(img, cmap='gray', vmin=0, vmax=255)
+    ax_loc.set_title(f'{img_name}: Original image with selected patch locations', fontsize=12)
+    for idx, (var, pi, pj) in enumerate(picks[:4]):
+        rect = mpatches.Rectangle((pj - 0.5, pi - 0.5), 8, 8,
+                                   linewidth=2.5, edgecolor=colors[idx], facecolor='none')
+        ax_loc.add_patch(rect)
+        # Add label near the box
+        ax_loc.text(pj + 10, pi + 4, f'{labels[idx]}\nvar={var:.0f}',
+                    color=colors[idx], fontsize=8, fontweight='bold',
+                    bbox=dict(boxstyle='round,pad=0.2', facecolor='black', alpha=0.6))
+    ax_loc.axis('off')
+    plt.tight_layout()
+    plt.savefig(os.path.join(OUT_DIR, f'{img_name}_patch_locations.png'), dpi=150, bbox_inches='tight')
+    plt.close()
+
+    # --- Figure 2: Zoomed patches (spatial) + DCT log-magnitude ---
+    fig, axes = plt.subplots(2, 4, figsize=(16, 8))
+    for idx, (var, pi, pj) in enumerate(picks[:4]):
         patch = padded[pi:pi+8, pj:pj+8]
         cpatch = coeffs[pi:pi+8, pj:pj+8]
-        axes[0, idx].imshow(patch, cmap='gray', vmin=0, vmax=255)
-        axes[0, idx].set_title(f'Patch ({pi},{pj})')
+        # Spatial domain (zoomed in)
+        axes[0, idx].imshow(patch, cmap='gray', vmin=0, vmax=255, interpolation='nearest')
+        axes[0, idx].set_title(f'{labels[idx]}\n({pi},{pj}), var={var:.0f}', fontsize=9,
+                               color=colors[idx])
         axes[0, idx].axis('off')
-        im = axes[1, idx].imshow(np.abs(cpatch), cmap='hot')
-        axes[1, idx].set_title(f'DCT |coeff|')
+        # Add a colored border to match the location map
+        for spine in axes[0, idx].spines.values():
+            spine.set_edgecolor(colors[idx])
+            spine.set_linewidth(3)
+            spine.set_visible(True)
+        # DCT domain: use log(1 + |coeff|) for better visibility
+        log_coeff = np.log1p(np.abs(cpatch))
+        im = axes[1, idx].imshow(log_coeff, cmap='hot', interpolation='nearest')
+        axes[1, idx].set_title(f'DCT log(1+|c|)', fontsize=9)
         axes[1, idx].axis('off')
-    fig.suptitle(f'{img_name}: Example patches (top: spatial, bottom: DCT magnitude)')
+        plt.colorbar(im, ax=axes[1, idx], fraction=0.046, pad=0.04)
+    fig.suptitle(f'{img_name}: Zoomed 8x8 patches (top: spatial, bottom: DCT log-magnitude)', fontsize=12)
     plt.tight_layout()
     plt.savefig(os.path.join(OUT_DIR, f'{img_name}_dct_patches.png'), dpi=150, bbox_inches='tight')
     plt.close()
