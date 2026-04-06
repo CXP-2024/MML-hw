@@ -1,0 +1,178 @@
+\documentclass[11pt]{article}
+
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{graphicx}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{hyperref}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{black},
+  commentstyle=\color{gray},
+  frame=none,
+  numbers=left,
+  numberstyle=\tiny\color{gray},
+  xleftmargin=2em,
+  columns=fullflexible
+}
+
+\title{Introduction to Multimodal Learning: Problem Set 2}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\noindent\textbf{Due:} 4.20
+
+\noindent Please submit a zip file containing the following:
+
+\begin{itemize}
+    \item An implemented version of \texttt{HW2.ipynb} that contains your implementation and output results.
+    \item A \texttt{result} folder that saves your visualization results (\texttt{.gif} and figures).
+    \item A \texttt{report.pdf} file briefly summarizing your results and observations. It should include result figures and answers to all questions.
+\end{itemize}
+
+\noindent It is recommended to run the notebook on Google Colab (with GPU), as CPU training can be slow. Each training run takes roughly 1--2 minutes.
+
+\section{Denoising Diffusion Probabilistic Models}
+
+Ring distribution is a typical multi-modal distribution. To evaluate DDPM's fitting capability, we choose a ring as the toy dataset.
+
+\textbf{Implementation Requirements:} In the \texttt{DDPM} class of \texttt{HW2.ipynb}, implement the following three functions:
+
+\begin{enumerate}
+    \item \texttt{forward\_process}: Sample \( x_t \) from \( q(x_t \mid x_0) \). Recall the forward process:
+    \[
+    x_t = \sqrt{\bar\alpha_t}\, x_0 + \sqrt{1 - \bar\alpha_t}\, \epsilon, \quad \epsilon \sim \mathcal{N}(0, I).
+    \]
+
+    \item \texttt{loss\_fn}: Compute the denoising training loss. The model \( \epsilon_\theta(x_t, t) \) predicts the noise \( \epsilon \) added during the forward process.
+
+    \item \texttt{reverse\_process}: Implement the DDPM reverse sampling step:
+    \[
+    x_{t-1} = \frac{1}{\sqrt{\alpha_t}} \left( x_t - \frac{\beta_t}{\sqrt{1 - \bar\alpha_t}}\, \epsilon_\theta(x_t, t) \right) + \sigma_t\, z, \quad z \sim \mathcal{N}(0, I),
+    \]
+    where \( \sigma_t = \sqrt{\tilde\beta_t} = \sqrt{\frac{(1 - \bar\alpha_{t-1})\,\beta_t}{1 - \bar\alpha_t}} \).
+\end{enumerate}
+
+No need to tune any hyperparameters. Save your \texttt{.gif} file in the \texttt{result} folder and include results in your report.
+
+\hrulefill
+
+\section{Conditional Flow Matching}
+
+Flow matching is a simulation-free framework for training continuous normalizing flows. Instead of learning a discrete-step denoising process (as in DDPM), flow matching learns a continuous velocity field \( v_\theta(x, t) \) that transports a simple distribution (e.g., Gaussian noise) to the data distribution along a smooth path.
+
+\subsection{Conditional Velocity Field}
+
+Define the linear interpolation path between noise \( x_0 \sim \mathcal{N}(0, I) \) and data \( x_1 \sim q_{\mathrm{data}} \):
+\[
+x_t = (1 - t)\, x_0 + t\, x_1, \quad t \in [0, 1].
+\]
+
+\begin{enumerate}[label=(\alph*)]
+    \item Derive the conditional velocity field \( u_t(x_t \mid x_1) = \frac{dx_t}{dt} \).
+    \item Write down the Conditional Flow Matching (CFM) training objective:
+    \[
+    \mathcal{L}_{\mathrm{CFM}}(\theta) = \mathbb{E}_{t, x_0, x_1}\bigl[\| v_\theta(x_t, t) - u_t(x_t \mid x_1) \|^2\bigr].
+    \]
+    Explain why this is easier to compute than the intractable marginal flow matching loss.
+\end{enumerate}
+
+\subsection{Training CFM on 8-Gaussians}
+
+In \texttt{HW2.ipynb}, we provide a 2D \emph{8-Gaussians} dataset (8 Gaussian clusters arranged in a circle).
+
+\textbf{Implementation Requirements:}
+\begin{enumerate}
+    \item Implement the \texttt{cfm\_loss} function: sample \( t \sim \mathcal{U}[0,1] \), compute \( x_t \), and return the CFM loss.
+    \item Implement the \texttt{euler\_ode\_solve} function: starting from \( x_0 \sim \mathcal{N}(0, I) \), integrate the learned velocity field using Euler's method:
+    \[
+    x_{t + \Delta t} = x_t + v_\theta(x_t, t)\, \Delta t.
+    \]
+    \item Train the model and generate samples.
+\end{enumerate}
+
+\subsection{Analysis}
+
+\begin{enumerate}
+    \item Compare generation quality with different numbers of Euler steps (\( S \in \{1, 5, 10, 50, 100\} \)). Include figures in your report.
+    \item Visualize the learned velocity field \( v_\theta(x, t) \) at several time steps (e.g., \( t = 0, 0.25, 0.5, 0.75 \)). Comment on how the velocity field changes over time.
+\end{enumerate}
+
+\hrulefill
+
+\section{Mean Flow}
+
+Consider a trained velocity field \( v_\theta(x, t) \) from Section~2. The probability flow ODE is:
+\[
+\frac{dz_t}{dt} = v_\theta(z_t, t), \quad z_0 \sim \mathcal{N}(0, I), \quad t \in [0, 1].
+\]
+Standard ODE-based generation requires many integration steps. \emph{Mean Flow} (Geng et al., 2025) introduces the \textbf{time-averaged velocity} to enable efficient few-step or even one-step generation.
+
+\subsection{MeanFlow Identity}
+
+Define the \textbf{mean velocity} from time \( 0 \) to time \( t \) along an ODE trajectory as:
+\[
+\bar{u}(z_t, t) \;=\; \frac{z_t - z_0}{t}, \quad t > 0.
+\]
+This is the average velocity over the interval \( [0, t] \).
+
+\begin{enumerate}[label=(\alph*)]
+    \item Derive the \textbf{MeanFlow Identity}:
+    \[
+    \boxed{\;\bar{u}(z_t, t) \;=\; v(z_t, t) \;-\; t\,\frac{d\bar{u}(z_t, t)}{dt}\;}
+    \]
+    \emph{Hint:} Start from \( z_t = z_0 + \int_0^t v(z_s, s)\,ds \). Differentiate \( \bar{u} = (z_t - z_0)/t \) with respect to \( t \) along the ODE trajectory.
+
+    \item Show that \( \displaystyle\lim_{t \to 0^+} \bar{u}(z_t, t) = v(z_0, 0) \). \\
+    \emph{Hint:} Apply L'H\^{o}pital's rule to \( (z_t - z_0)/t \).
+
+    \item At \( t = 1 \), show that \( \bar{u}(z_1, 1) = z_1 - z_0 \). Explain why this means a perfect mean velocity predictor enables \textbf{one-step generation}:
+    \[
+    z_1 = z_0 + \bar{u}(z_1, 1).
+    \]
+    However, this requires knowing \( z_1 \) (the endpoint) as input to compute \( \bar{u} \). Discuss why this circular dependency makes direct one-step generation non-trivial, and how one might work around it (e.g., training a displacement network \( D_\theta(z_0) \approx z_1 - z_0 \)).
+\end{enumerate}
+
+\subsection{Verification and One-Step Generation}
+
+Using the trained flow matching model and the \texttt{euler\_ode\_solve} function from Section~2:
+
+\begin{enumerate}
+    \item \textbf{Numerical verification:} Generate ODE trajectories (code provided). For several trajectories, compute and plot:
+    \begin{itemize}
+        \item The instantaneous velocity \( v(z_t, t) \) from the trained model.
+        \item The mean velocity \( \bar{u}(z_t, t) = (z_t - z_0)/t \).
+        \item The quantity \( v(z_t, t) - t \cdot d\bar{u}/dt \) (numerical derivative).
+    \end{itemize}
+    Verify that \( \bar{u} \approx v - t \cdot d\bar{u}/dt \) holds along the trajectory.
+
+    \item \textbf{One-step generation:} We train a displacement network \( D_\theta(z_0) \approx z_1 - z_0 \) using ODE trajectory data (training code provided). Compare:
+    \begin{itemize}
+        \item 100-step ODE generation (from Section~2).
+        \item 1-step mean flow generation: \( z_1 = z_0 + D_\theta(z_0) \).
+    \end{itemize}
+    Include figures in your report and discuss the quality difference.
+\end{enumerate}
+
+\hrulefill
+
+\section*{References}
+
+\begin{itemize}
+    \item Ho J, Jain A, Abbeel P. \emph{Denoising diffusion probabilistic models}. NeurIPS, 2020.
+    \item Lipman Y, Chen R T Q, Ben-Hamu H, et al.\ \emph{Flow matching for generative modeling}. ICLR, 2023.
+    \item Geng Z, Pokle A, Luo W, et al.\ \emph{Mean Flows for one-step generative modeling}. arXiv preprint arXiv:2505.13447, 2025.
+    \item MIT 6.S978: Deep Generative Models. \url{https://mit-6s978.github.io/schedule.html}
+\end{itemize}
+
+\bigskip
+\noindent\textbf{Please submit your code and results.}
+
+\end{document}
