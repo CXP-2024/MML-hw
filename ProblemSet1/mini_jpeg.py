@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Mini JPEG-Style Compressor for Problem Set 1, Problem 3."""
-
+# Run by 
+# python3 mini_jpeg.py
 import numpy as np
 from scipy.fftpack import dct, idct
 from PIL import Image
