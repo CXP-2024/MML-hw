@@ -1,0 +1,5 @@
+clip,visual_quality,temporal_consistency,motion_naturalness,note
+clean_translation,5,5,5,"clean uniform translation, no visible artifacts."
+flicker,3,2,3,alternating brightness creates strong flicker between odd/even frames.
+jitter,3,2,2,non-uniform vertical and horizontal offsets give a visible shaky look.
+blur,3,5,4,spatial Gaussian blur reduces sharpness but motion remains smooth.
