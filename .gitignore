@@ -1,6 +1,12 @@
 .DS_Store
 *.zip
 
+# Python / notebook local artifacts
+__pycache__/
+.ipynb_checkpoints/
+.venv/
+.mplconfig/
+
 # LaTeX build artifacts
 *.aux
 *.bbl

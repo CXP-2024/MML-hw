@@ -30,7 +30,7 @@ We use the synthetic clean-translation clip from \texttt{hw3\_utils.py}: a $128\
 
 \paragraph{1.2 Exhaustive block matching.} \texttt{block\_matching} divides $I_t$ into non-overlapping $B\times B$ blocks and exhaustively searches displacements $(u,v)\in[-R,R]^2$ in $I_{t-1}$, choosing the candidate that minimizes SAD or MSE. The motion field has shape $(H/B,W/B,2)$ with vectors stored as $(dy,dx)$ such that the candidate is taken from $I_{t-1}[y+dy,x+dx]$. Candidates whose top-left falls outside the frame are rejected. The implementation iterates over the $(2R+1)^2$ displacements, gathers all $H_b\!\times\! W_b$ candidate blocks at each shift, computes per-block costs in one tensor pass, and updates the running $\arg\min$ via masked element-wise comparisons.
 
-Table~\ref{tab:bm} averages the four required configurations and the SAD/MSE choice over the five frame pairs of the clean clip. SAD and MSE produce identical motion vectors and identical predictions on this clip (see CSV \texttt{result/block\_matching\_metrics.csv}); we report the SAD column.
+Table~\ref{tab:bm} averages the four required configurations over the five frame pairs of the clean clip. SAD and MSE produce identical predictions on this clip (see CSV \texttt{result/block\_matching\_metrics.csv}); we report the SAD column. The aggregate PSNR in the table is computed from the mean MSE, rather than by averaging per-frame PSNR values, so settings with a mix of perfect and non-perfect frames remain finite and interpretable.
 
 \begin{table}[H]
     \centering
@@ -38,28 +38,28 @@ Table~\ref{tab:bm} averages the four required configurations and the SAD/MSE cho
         \toprule
         Configuration & MSE & PSNR (dB) & H($R_t$) (bits/px) & Runtime (s) \\
         \midrule
-        Baseline (frame difference)  & 781.25 & 19.20 & 0.158 & $3.0\!\times\!10^{-5}$ \\
-        Block matching $B{=}8,\,R{=}4$  & 0.00 & $\infty$ & 0.000 & 0.019 \\
-        Block matching $B{=}16,\,R{=}4$ & 0.00 & $\infty$ & 0.000 & 0.008 \\
-        Block matching $B{=}16,\,R{=}8$ & 0.00 & $\infty$ & 0.000 & 0.029 \\
-        Block matching $B{=}32,\,R{=}8$ & 365.62 & 22.78 & 0.075 & 0.017 \\
+        Baseline (frame difference)  & 781.25 & 19.20 & 0.158 & $1.0\!\times\!10^{-5}$ \\
+        Block matching $B{=}8,\,R{=}4$  & 0.00 & $\infty$ & 0.000 & 0.010 \\
+        Block matching $B{=}16,\,R{=}4$ & 0.00 & $\infty$ & 0.000 & 0.004 \\
+        Block matching $B{=}16,\,R{=}8$ & 0.00 & $\infty$ & 0.000 & 0.016 \\
+        Block matching $B{=}32,\,R{=}8$ & 171.88 & 25.78 & 0.037 & 0.010 \\
         \bottomrule
     \end{tabular}
-    \caption{Mean over five frame pairs (SAD metric). For $B\le16$ the search radius covers the true displacement $(2,4)$, giving exact reconstruction. With $B=32$ a single block straddles the moving square and the static background, so no rigid translation can match it perfectly --- a useful illustration of the block-size/motion-coherence trade-off.}
+    \caption{Mean over five frame pairs (SAD metric). For $B\le16$ the search radius covers the true displacement $(2,4)$, giving exact reconstruction. With $B=32$, some early frame pairs contain blocks that straddle the moving square and the static background, so no single rigid translation can match those blocks perfectly --- a useful illustration of the block-size/motion-coherence trade-off.}
     \label{tab:bm}
 \end{table}
 
-The $B{=}16,R{=}8$ run on $(t{=}0,t{=}1)$ produces motion vectors that are exactly $(-2,-4)$ over every block touching the moving square and $(0,0)$ elsewhere, which is the convention of sampling \texttt{prev[y+dy,x+dx]} for a square that moved by $(+2,+4)$ in frame $t$. The vector field and prediction grids are saved as \texttt{result/block\_b16\_r8\_mv.png} and \texttt{result/block\_b16\_r8\_pred.png} (Fig.~\ref{fig:bm}).
+The $B{=}16,R{=}8$ run on $(t{=}0,t{=}1)$ recovers the inverse displacement $(-2,-4)$ on textured square-boundary blocks, matching the convention of sampling \texttt{prev[y+dy,x+dx]} for a square that moved by $(+2,+4)$ in frame $t$. Completely flat background or square-interior blocks can have several equally good matches; the implementation resolves these ties by choosing the smallest displacement magnitude, which keeps ambiguous regions stable. The vector field and prediction grids are saved as \texttt{result/block\_b16\_r8\_mv.png} and \texttt{result/block\_b16\_r8\_pred.png} (Fig.~\ref{fig:bm}).
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.27\textwidth]{result/block_b16_r8_mv.png}
     \includegraphics[width=0.55\textwidth]{result/block_b16_r8_pred.png}
-    \caption{Block matching with $B{=}16,R{=}8$, SAD. Left: motion-vector field, with non-trivial vectors only on blocks containing the moving square. Right: predicted frame and residual; the residual is identically zero.}
+    \caption{Block matching with $B{=}16,R{=}8$, SAD. Left: motion-vector field after deterministic tie-breaking in ambiguous flat regions. Right: predicted frame and residual; the residual is identically zero.}
     \label{fig:bm}
 \end{figure}
 
-\paragraph{Failure case.} For $B{=}32,R{=}8$ four of the sixteen $32\times 32$ blocks straddle the moving-square / background boundary. Because that boundary is not rigidly translated by any single displacement (only the square is), block matching picks $(0,0)$ for those blocks and the residual concentrates on the leading/trailing edges. PSNR rises to $22.78$~dB versus the baseline's $19.20$~dB but cannot reach perfect reconstruction --- the classical block-size / motion-coherence trade-off.
+\paragraph{Failure case.} For $B{=}32,R{=}8$, several early $32\times 32$ blocks straddle the moving-square / background boundary. Because that boundary is not rigidly translated by any single displacement (only the square is), residual error remains on the leading/trailing edges for those pairs. The aggregate PSNR rises to $25.78$~dB versus the baseline's $19.20$~dB but does not match the perfect reconstruction of smaller blocks --- the classical block-size / motion-coherence trade-off.
 
 \section{Temporal Consistency Evaluation (Section 2)}
 
@@ -71,10 +71,10 @@ The $B{=}16,R{=}8$ run on $(t{=}0,t{=}1)$ produces motion vectors that are exact
         \toprule
         Clip & Sharpness & Temp. diff & Temp. accel & Motion mag (px) \\
         \midrule
-        clean\_translation & 566.4 & 3.91 & 7.81 & 9.88 \\
-        flicker            & 538.8 & 46.11 & 91.40 & 9.43 \\
-        jitter             & 566.4 & 6.43 & 12.97 & 10.05 \\
-        blur               &   5.1 & 2.56 & 2.42 & 9.07 \\
+        clean\_translation & 566.4 & 3.91 & 7.81 & 0.39 \\
+        flicker            & 538.8 & 46.11 & 91.40 & 0.30 \\
+        jitter             & 566.4 & 6.43 & 12.97 & 0.62 \\
+        blur               &   5.1 & 2.56 & 2.42 & 0.51 \\
         \bottomrule
     \end{tabular}
     \caption{Per-clip objective metrics. Sharpness is variance of Laplacian; temporal-difference and -acceleration are mean L1 over consecutive and three-frame triplets; motion magnitude is mean L2 of block-matching vectors.}
@@ -125,7 +125,7 @@ QKV projections add $\Theta(THW d^2)$, dominated by the attention term for large
 \]
 
 \paragraph{(c) Numerical comparison for $T{=}16, H{=}W{=}32$.}
-$THW = 16{\cdot}1024 = 16{,}384$, so joint attention pays $(16384)^2 \approx 2.68\!\times\!10^8$ pairwise scores per head. Factorized: spatial $T(HW)^2 = 16\cdot 1024^2 \approx 1.68\!\times\!10^7$; temporal $HW\cdot T^2 = 1024\cdot 256 \approx 2.62\!\times\!10^5$. The total $\approx 1.7\!\times\!10^7$ is roughly $\mathbf{16\times}$ cheaper than joint, because $HW \gg T$ here so $HW+T\approx HW$ and the saving is exactly the factor $T$. More generally, factorizing avoids the cross-term $T\cdot HW$ inside the attention map and reduces $T^2(HW)^2$ to $T(HW)^2 + (HW)T^2$. Memory for the attention matrix shrinks correspondingly from $\Theta((THW)^2)$ to $\Theta((HW)^2 + T^2)$.
+$THW = 16{\cdot}1024 = 16{,}384$, so joint attention pays $(16384)^2 \approx 2.68\!\times\!10^8$ pairwise scores per head. Factorized: spatial $T(HW)^2 = 16\cdot 1024^2 \approx 1.68\!\times\!10^7$; temporal $HW\cdot T^2 = 1024\cdot 256 \approx 2.62\!\times\!10^5$. The total $\approx 1.7\!\times\!10^7$ is roughly $\mathbf{16\times}$ cheaper than joint, because $HW \gg T$ here so $HW+T\approx HW$ and the saving is exactly the factor $T$. More generally, factorizing avoids the cross-term $T\cdot HW$ inside the attention map and reduces $T^2(HW)^2$ to $T(HW)^2 + (HW)T^2$. Counting all attention maps in a layer, memory follows the same reduction from $\Theta((THW)^2)$ to $\Theta(T(HW)^2 + HW\,T^2)$; the peak map for each sub-attention is only $\Theta((HW)^2)$ or $\Theta(T^2)$.
 
 \section{Bonus: Hierarchical Block Matching (Option B)}
 
@@ -137,16 +137,16 @@ We build a 3-level Gaussian pyramid (5-tap kernel $[1,4,6,4,1]/16$ applied separ
         \toprule
         Method & Mean PSNR (dB) & Mean MSE & Mean runtime (s) \\
         \midrule
-        Exhaustive $B{=}16,R{=}8$       & $\infty$ (perfect) & 0.0  & 0.029 \\
-        Hierarchical $B{=}16$, 3 levels & 35.13 & 27.19 & 0.005 \\
+        Exhaustive $B{=}16,R{=}8$       & $\infty$ (perfect) & 0.0  & 0.015 \\
+        Hierarchical $B{=}16$, 3 levels & 24.83 & 213.87 & 0.003 \\
         \bottomrule
     \end{tabular}
-    \caption{Hierarchical vs.\ exhaustive on five frame pairs of the clean translation clip. Hierarchical search is roughly $\mathbf{6\times}$ faster on $128\!\times\!128$ frames, at the cost of a finite (still high) PSNR. The residual error originates at the coarsest level: after $2\!\times\!$ downsampling the per-frame displacement is only $1$~px, which the integer search rounds; subsequent $\pm1$~px refinement cannot recover sub-block translations on the half-resolution grid where the square boundary is mis-aligned.}
+    \caption{Hierarchical vs.\ exhaustive on five frame pairs of the clean translation clip. Hierarchical search is roughly $\mathbf{5\times}$ faster on $128\!\times\!128$ frames, at the cost of lower PSNR. The residual error originates from coarse-level smoothing/downsampling and integer-vector refinement, which can misalign square boundaries before the fine levels search only a narrow neighborhood.}
     \label{tab:bonus}
 \end{table}
 
 The full per-frame numbers, the hierarchical motion-vector visualization (\texttt{result/hierarchical\_mv.png}) and the prediction grid (\texttt{result/hierarchical\_pred.png}) are saved alongside the exhaustive outputs in \texttt{result/}.
 
-\paragraph{Reproducibility.} Run \texttt{HW3.ipynb} (CPU only, $<1$~min). Outputs are saved to \texttt{result/}: GIFs of the four clips, prediction/motion-vector plots, and CSVs \texttt{block\_matching\_metrics.csv}, \texttt{consistency\_metrics.csv}, \texttt{human\_eval.csv}, \texttt{hierarchical\_vs\_exhaustive.csv}. A sanity check in cell~6 confirms block-matching vectors are exactly $(-2,-4)$ on the moving square, matching the synthetic ground truth.
+\paragraph{Reproducibility.} Run \texttt{HW3.ipynb} (CPU only, $<1$~min). Outputs are saved to \texttt{result/}: GIFs of the four clips, prediction/motion-vector plots, and CSVs \texttt{block\_matching\_metrics.csv}, \texttt{consistency\_metrics.csv}, \texttt{human\_eval.csv}, \texttt{hierarchical\_vs\_exhaustive.csv}. A sanity check in cell~6 confirms that textured boundary blocks recover the expected inverse displacement $(-2,-4)$, while flat regions are resolved by deterministic tie-breaking.
 
 \end{document}
